@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Webcam Music and Filters</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Press Start 2P', cursive;
+    }
+
+    #container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #video-feed {
+      display: flex;
+      align-items: center;
+      margin-right: 10px;
+    }
+
+    #control-buttons {
+      display: flex;
+      flex-direction: column;
+    }
+
+    button {
+      margin: 10px;
+      background-color: #444;
+      border: 2px solid #222;
+      color: #fff;
+      font-size: 12px;
+      padding: 5px 10px;
+      cursor: pointer;
+      box-shadow: 2px 2px 2px #888888;
+    }
+
+    #video-canvas {
+      border: 1px solid #333;
+      display: flex;
+      justify-content: center;
+    }
+
+    #spiral-background {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <div id="video-feed">
+      <div id="video-canvas">
+      </div>
+    </div>
+    <div id="control-buttons">
+      <button onclick="toggleMusic()" id="musicButton">Music</button>
+      <button onclick="selectFilter(0)">Original</button>
+      <button onclick="selectFilter(1)">Grayscale</button>
+      <button onclick="selectFilter(2)">Invert</button>
+      <button onclick="selectFilter(3)">Threshold</button>
+      <button onclick="selectFilter(4)">Posterize</button>
+    </div>
+  </div>
+
+  <script>
+    let video;
+    let musicOn = false;
+    let soundContextStarted = false; 
+    let mic, fft;
+    let amp, oscillator;
+    let selectedFilter = 0;
+
+    function setup() {
+      createCanvas(800, 400);
+      video = createCapture(VIDEO, function() {
+        video.size(400, 300);
+        video.hide(); 
+      });
+    }
+
+    function toggleMusic() {
+      if (!soundContextStarted) {
+        initializeSound();
+      } else {
+        musicOn = !musicOn;
+        document.querySelector("#musicButton").innerText = musicOn ? "Stop Music" : "Music";
+        if (!musicOn) {
+          stopMusic();
+        }
+      }
+    }
+
+    function initializeSound() {
+      if (!soundContextStarted) {
+        mic = new p5.AudioIn();
+        mic.start();
+        fft = new p5.FFT();
+        fft.setInput(mic);
+
+        oscillator = new p5.Oscillator();
+        oscillator.setType('sine');
+        oscillator.start();
+        oscillator.amp(0); 
+
+        soundContextStarted = true;
+        musicOn = true;
+        document.querySelector("#musicButton").innerText = "Stop Music";
+      }
+    }
+
+    function stopMusic() {
+      musicOn = false;
+      if (soundContextStarted) {
+        oscillator.amp(0, 0.5);
+      }
+      document.querySelector("#musicButton").innerText = "Music";
+    }
+
+    function draw() {
+      background(0);
+
+      let filteredImage = applyFilter(selectedFilter);
+      image(filteredImage, 200, 50, 400, 300); 
+
+      if (musicOn && soundContextStarted) {
+        let spectrum = fft.analyze();
+
+        filteredImage.loadPixels();
+        let rTotal = 0,
+          gTotal = 0,
+          bTotal = 0;
+        for (let i = 0; i < filteredImage.pixels.length; i += 4) {
+          rTotal += filteredImage.pixels[i];
+          gTotal += filteredImage.pixels[i + 1];
+          bTotal += filteredImage.pixels[i + 2];
+        }
+        let numPixels = filteredImage.width * filteredImage.height;
+        let avgR = rTotal / numPixels;
+        let avgG = gTotal / numPixels;
+        let avgB = bTotal / numPixels;
+        let volume = map(avgR, 0, 255, 0, 1);
+        let frequency = map(avgG, 0, 255, 100, 1000);
+        oscillator.amp(volume, 0.1); 
+        oscillator.freq(frequency, 0.1); 
+      }
+    }
+
+    function applyFilter(filterType) {
+      let filteredImage = createImage(video.width, video.height);
+      filteredImage.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
+
+      switch (filterType) {
+        case 0:
+          // No filter (Original)
+          break;
+        case 1:
+          filteredImage.filter(GRAY);
+          break;
+        case 2:
+          filteredImage.filter(INVERT);
+          break;
+        case 3:
+          filteredImage.filter(THRESHOLD);
+          break;
+        case 4:
+          let levels = 4; 
+          filteredImage.filter(POSTERIZE, levels);
+          break;
+        default:
+          break;
+      }
+      
+      return filteredImage;
+    }
+
+    function selectFilter(filterIndex) {
+      selectedFilter = filterIndex;
+    }
+  </script>
+  <script>
+ 
+    import { map } from '/src/modules/num.js';
+    import { sort } from '/src/modules/sort.js';
+    import { vec2, rot, add, mulN, addN, subN, length } from '/src/modules/vec2.js';
+
+    const { min, sin, cos, floor } = Math;
+
+    const density  = '#Wabc:+-. ';
+    const colors = ['deeppink', 'black', 'red', 'blue', 'orange', 'yellow'];
+
+    function drawSpiralBackground(coord, context) {
+      const t  = context.time * 0.0002;
+      const m = min(context.cols, context.rows);
+      const a = context.metrics.aspect;
+
+      const st = {
+        x : 2.0 * (coord.x - context.cols / 2) / m * a,
+        y : 2.0 * (coord.y - context.rows / 2) / m
+      };
+
+      for (let i=0;i<3;i++) {
+        const o = i * 3;
+        const v = vec2(sin(t * 3 + o), cos(t * 2 + o));
+        add(st, v, st);
+
+        const ang = -t + length(subN(st, 0.5));
+        rot(st, ang, st);
+      }
+
+      mulN(st, 0.6, st);
+
+      const s = cos(t) * 2.0;
+      let c = sin(st.x * 3.0 + s) + sin(st.y * 21);
+      c = map(sin(c * 0.5), -1, 1, 0, 1);
+
+      const index = floor(c * (density.length - 1));
+      const color = floor(c * (colors.length - 1));
+
+      return {
+        char : density[index],
+        color : colors[color]
+      };
+    }
+
+    function draw() {
+      background(0);
+   
+      drawLayer(drawSpiralBackground);
+    }
+
+    function drawLayer(drawFunc) {
+      loadPixels();
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let coord = { x, y };
+          let pixelInfo = drawFunc(coord, { time: millis() * 0.001, cols: width, rows: height, metrics: { aspect: width / height } });
+          let index = (x + y * width) * 4;
+          pixels[index] = red(pixelInfo.color);
+          pixels[index + 1] = green(pixelInfo.color);
+          pixels[index + 2] = blue(pixelInfo.color);
+          pixels[index + 3] = 255;
+        }
+      }
+      updatePixels();
+    }
+
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</body>
+</html>

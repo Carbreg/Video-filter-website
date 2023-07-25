@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Webcam Music and Filters</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #9bc27c; 
+      font-family: 'Press Start 2P', cursive;
+    }
+
+    #container {
+      border: 8px solid #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #e6fcd9; 
+      box-shadow: 0 8px 0 #222;
+    }
+
+    #video-feed {
+      display: flex;
+      align-items: center;
+    }
+
+    .video-box {
+      border: 1px solid #333; 
+      padding: 5px;
+      margin: 5px;
+      display: flex;
+      justify-content: center;
+    }
+
+    #control-buttons {
+      display: flex;
+      flex-direction: column;
+    }
+
+    button {
+      margin: 10px;
+      background-color: #444; 
+      border: 2px solid #222; 
+      color: #fff;
+      font-size: 12px;
+      padding: 5px 10px;
+      cursor: pointer;
+      box-shadow: 2px 2px 2px #888888;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <div id="video-feed">
+      <div class="video-box">
+        <div id="video-canvas">
+        </div>
+      </div>
+      <div id="control-buttons">
+        <button onclick="toggleMusic()" id="musicButton">Music</button>
+        <button onclick="selectFilter(0)">Original</button>
+        <button onclick="selectFilter(1)">Grayscale</button>
+        <button onclick="selectFilter(2)">Invert</button>
+        <button onclick="selectFilter(3)">Threshold</button>
+        <button onclick="selectFilter(4)">Posterize</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let video;
+    let musicOn = false;
+    let soundContextStarted = false; 
+    let mic, fft;
+    let amp, oscillator;
+    let selectedFilter = 0;
+
+    function setup() {
+      createCanvas(800, 400);
+      video = createCapture(VIDEO);
+      video.size(400, 300); 
+      video.hide(); 
+    }
+
+    function toggleMusic() {
+      if (!soundContextStarted) {
+        initializeSound();
+      } else {
+        musicOn = !musicOn;
+        document.querySelector("#musicButton").innerText = musicOn ? "Stop Music" : "Music";
+        if (!musicOn) {
+          stopMusic();
+        }
+      }
+    }
+
+    function initializeSound() {
+      if (!soundContextStarted) {
+        mic = new p5.AudioIn();
+        mic.start();
+        fft = new p5.FFT();
+        fft.setInput(mic);
+
+        oscillator = new p5.Oscillator();
+        oscillator.setType('sine');
+        oscillator.start();
+        oscillator.amp(0); 
+
+        soundContextStarted = true;
+        musicOn = true;
+        document.querySelector("#musicButton").innerText = "Stop Music";
+      }
+    }
+
+    function stopMusic() {
+      musicOn = false;
+      if (soundContextStarted) {
+        oscillator.amp(0, 0.5);
+      }
+      document.querySelector("#musicButton").innerText = "Music";
+    }
+
+    function draw() {
+      background(0);
+
+      let filteredImage = applyFilter(selectedFilter);
+      image(filteredImage, 200, 50, 400, 300); // Adjust the position and size of the video
+
+      if (musicOn && soundContextStarted) {
+        let spectrum = fft.analyze();
+
+        filteredImage.loadPixels();
+        let rTotal = 0,
+          gTotal = 0,
+          bTotal = 0;
+        for (let i = 0; i < filteredImage.pixels.length; i += 4) {
+          rTotal += filteredImage.pixels[i];
+          gTotal += filteredImage.pixels[i + 1];
+          bTotal += filteredImage.pixels[i + 2];
+        }
+        let numPixels = filteredImage.width * filteredImage.height;
+        let avgR = rTotal / numPixels;
+        let avgG = gTotal / numPixels;
+        let avgB = bTotal / numPixels;
+        let volume = map(avgR, 0, 255, 0, 1);
+        let frequency = map(avgG, 0, 255, 100, 1000);
+        oscillator.amp(volume, 0.1); 
+        oscillator.freq(frequency, 0.1); 
+      }
+    }
+
+    function applyFilter(filterType) {
+      let filteredImage = createImage(video.width, video.height);
+      filteredImage.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
+
+      switch (filterType) {
+        case 0:
+          // No filter (Original)
+          break;
+        case 1:
+          filteredImage.filter(GRAY);
+          break;
+        case 2:
+          filteredImage.filter(INVERT);
+          break;
+        case 3:
+          filteredImage.filter(THRESHOLD);
+          break;
+        case 4:
+          let levels = 4; 
+          filteredImage.filter(POSTERIZE, levels);
+          break;
+        default:
+          break;
+      }
+      
+      return filteredImage;
+    }
+
+    function selectFilter(filterIndex) {
+      selectedFilter = filterIndex;
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.dom.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</body>
+</html>

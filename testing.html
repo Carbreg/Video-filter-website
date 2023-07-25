@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Webcam Music and Filters</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #9bc27c; 
+      font-family: 'Press Start 2P', cursive;
+    }
+
+    #container {
+      border: 8px solid #333; 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #e6fcd9; 
+      box-shadow: 0 8px 0 #222;
+    }
+
+    #video-feed {
+      display: flex;
+      align-items: center;
+    }
+
+    .video-box {
+      border: 1px solid #333; 
+      padding: 5px;
+      margin: 5px;
+      display: flex;
+      justify-content: center;
+    }
+
+    #control-buttons {
+      display: flex;
+      flex-direction: column;
+    }
+
+    button {
+      margin: 10px;
+      background-color: #444;
+      border: 2px solid #222;
+      color: #fff;
+      font-size: 12px;
+      padding: 5px 10px;
+      cursor: pointer;
+      box-shadow: 2px 2px 2px #888888;
+      font-family: 'Press Start 2P', cursive;
+    }
+
+    #background-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <div id="video-feed">
+      <div class="video-box">
+        <div id="video-canvas">
+        </div>
+      </div>
+      <div id="control-buttons">
+        <button onclick="toggleMusic()" id="musicButton">Music</button>
+        <button onclick="selectFilter(0)">Original</button>
+        <button onclick="selectFilter(1)">Grayscale</button>
+        <button onclick="selectFilter(2)">Invert</button>
+        <button onclick="selectFilter(3)">Threshold</button>
+        <button onclick="selectFilter(4)">Posterize</button>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="background-canvas"></canvas>
+
+  <script>
+    let video;
+    let musicOn = false;
+    let soundContextStarted = false; 
+    let mic, fft;
+    let amp, oscillator;
+    let selectedFilter = 0;
+    let characters;
+    let charactersLength;
+    let cellSize;
+    let cols;
+    let rows;
+    let grid;
+    let frameCounter = 0;
+
+    function setup() {
+      createCanvas(800, 400);
+      video = createCapture(VIDEO);
+      video.size(400, 300); 
+      video.hide(); 
+
+      setupGenerativeBackground();
+    }
+
+    function toggleMusic() {
+      if (!soundContextStarted) {
+        initializeSound();
+      } else {
+        musicOn = !musicOn;
+        document.querySelector("#musicButton").innerText = musicOn ? "Stop Music" : "Music";
+        if (!musicOn) {
+          stopMusic();
+        }
+      }
+    }
+
+    function initializeSound() {
+      if (!soundContextStarted) {
+        mic = new p5.AudioIn();
+        mic.start();
+        fft = new p5.FFT();
+        fft.setInput(mic);
+
+        oscillator = new p5.Oscillator();
+        oscillator.setType('sine');
+        oscillator.start();
+        oscillator.amp(0); 
+
+        soundContextStarted = true;
+        musicOn = true;
+        document.querySelector("#musicButton").innerText = "Stop Music";
+      }
+    }
+
+    function stopMusic() {
+      musicOn = false;
+      if (soundContextStarted) {
+        oscillator.amp(0, 0.5);
+      }
+      document.querySelector("#musicButton").innerText = "Music";
+    }
+
+    function draw() {
+      background(0);
+
+      let filteredImage = applyFilter(selectedFilter);
+      image(filteredImage, 200, 50, 400, 300); 
+      if (musicOn && soundContextStarted) {
+        let spectrum = fft.analyze();
+
+        filteredImage.loadPixels();
+        let rTotal = 0,
+          gTotal = 0,
+          bTotal = 0;
+        for (let i = 0; i < filteredImage.pixels.length; i += 4) {
+          rTotal += filteredImage.pixels[i];
+          gTotal += filteredImage.pixels[i + 1];
+          bTotal += filteredImage.pixels[i + 2];
+        }
+        let numPixels = filteredImage.width * filteredImage.height;
+        let avgR = rTotal / numPixels;
+        let avgG = gTotal / numPixels;
+        let avgB = bTotal / numPixels;
+        let volume = map(avgR, 0, 255, 0, 1);
+        let frequency = map(avgG, 0, 255, 100, 1000);
+        oscillator.amp(volume, 0.1); 
+        oscillator.freq(frequency, 0.1); 
+      }
+    }
+
+    function applyFilter(filterType) {
+      let filteredImage = createImage(video.width, video.height);
+      filteredImage.copy(video, 0, 0, video.width, video.height, 0, 0, video.width, video.height);
+
+      switch (filterType) {
+        case 0:
+          // No filter 
+          break;
+        case 1:
+          filteredImage.filter(GRAY);
+          break;
+        case 2:
+          filteredImage.filter(INVERT);
+          break;
+        case 3:
+          filteredImage.filter(THRESHOLD);
+          break;
+        case 4:
+          let levels = 4; 
+          filteredImage.filter(POSTERIZE, levels);
+          break;
+        default:
+          break;
+      }
+      
+      return filteredImage;
+    }
+
+    function selectFilter(filterIndex) {
+      selectedFilter = filterIndex;
+    }
+
+    function setupGenerativeBackground() {
+      const canvas = document.getElementById('background-canvas');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      const context = canvas.getContext('2d');
+      characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      charactersLength = characters.length;
+      cellSize = 20;
+      cols = Math.floor(canvas.width / cellSize) + 1;
+      rows = Math.floor(canvas.height / cellSize) + 1;
+      grid = [];
+
+      for (let i = 0; i < rows; i++) {
+        let row = [];
+        for (let j = 0; j < cols; j++) {
+          row.push(characters.charAt(Math.floor(Math.random() * charactersLength)));
+        }
+        grid.push(row);
+      }
+
+      function drawBackground() {
+        context.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        context.font = '14px "Press Start 2P"';
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < rows; i++) {
+          for (let j = 0; j < cols; j++) {
+            const character = grid[i][j];
+            const x = j * cellSize + (canvas.width % cellSize) / 2; 
+            const y = i * cellSize + (canvas.height % cellSize) / 2; 
+            context.fillText(character, x, y);
+          }
+        }
+      }
+
+      function updateBackgroundCharacters() {
+        for (let i = 0; i < rows; i++) {
+          for (let j = 0; j < cols; j++) {
+            if (frameCounter % 5 === 0) {
+              grid[i][j] = characters.charAt(Math.floor(Math.random() * charactersLength));
+            }
+          }
+        }
+        frameCounter++;
+      }
+
+      setInterval(updateBackgroundCharacters, 100);
+      setInterval(drawBackground, 100);
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.dom.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</body>
+</html>
